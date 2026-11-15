@@ -2,6 +2,8 @@ import { defineFixture } from '../../../../component-fixtures/component-fixture'
 import type { Repo } from '../../../../../../shared/repository/repo-types'
 import type { Worktree } from '../../../../../../shared/worktree/types'
 import type { GitStatusEntry } from '../../../../../../shared/git/status/git-status-types'
+import type { OpenFile } from '@/store/slices/editor/types/open-file'
+import type { WorktreeDeleteState } from '@/store/slices/worktrees/teardown/worktree-delete-state-types'
 import DeleteWorktreeDialog from './DeleteWorktreeDialog'
 
 const repo: Repo = {
@@ -32,21 +34,67 @@ const worktree: Worktree = {
   lastActivityAt: 1
 }
 
+const shortWorktree: Worktree = {
+  ...worktree,
+  id: 'orca-plugins::/Users/me/orca/workspaces/orca-plugins/fix-login',
+  path: '/Users/me/orca/workspaces/orca-plugins/fix-login',
+  displayName: 'fix-login',
+  branch: 'fix-login'
+}
+
+const thirdWorktree: Worktree = {
+  ...worktree,
+  id: 'orca-plugins::/Users/me/orca/workspaces/orca-plugins/docs-refresh',
+  path: '/Users/me/orca/workspaces/orca-plugins/docs-refresh',
+  displayName: 'docs-refresh',
+  branch: 'docs-refresh'
+}
+
+function unsavedFile(worktreeId: string, name: string): OpenFile {
+  return {
+    id: `${worktreeId}::${name}`,
+    filePath: `/Users/me/orca/workspaces/orca-plugins/fix-login/${name}`,
+    relativePath: name,
+    worktreeId,
+    language: 'typescript',
+    isDirty: true,
+    mode: 'edit'
+  }
+}
+
 const dirtyEntries: GitStatusEntry[] = Array.from({ length: 13 }, (_, index) => ({
   path: `src/excalidraw/file-${index}.ts`,
   status: index % 3 === 0 ? 'untracked' : 'modified',
   area: index % 3 === 0 ? 'untracked' : 'unstaged'
 }))
 
-function dialogFixture(entries: GitStatusEntry[], interact?: (frame: HTMLElement) => void) {
+function dialogFixture(
+  options: {
+    target?: Worktree
+    entries?: GitStatusEntry[]
+    batch?: boolean
+    unsaved?: boolean
+    deleteState?: WorktreeDeleteState
+  } = {},
+  interact?: (frame: HTMLElement) => void
+) {
+  const target = options.target ?? worktree
+  const entries = options.entries ?? dirtyEntries
+  const all = options.batch ? [target, shortWorktree, thirdWorktree] : [target]
   return defineFixture({
     width: 640,
     store: {
       repos: [repo],
-      worktreesByRepo: { [repo.id]: [worktree] },
-      gitStatusByWorktree: { [worktree.id]: entries },
+      worktreesByRepo: { [repo.id]: all },
+      gitStatusByWorktree: Object.fromEntries(all.map((item) => [item.id, entries])),
+      openFiles: options.unsaved
+        ? [unsavedFile(target.id, 'src/login.ts'), unsavedFile(target.id, 'src/session.ts')]
+        : [],
+      deleteStateByWorktreeId: options.deleteState ? { [target.id]: options.deleteState } : {},
       activeModal: 'delete-worktree',
-      modalData: { worktreeId: worktree.id }
+      modalData: options.batch
+        ? { worktreeIds: all.map((item) => item.id) }
+        : { worktreeId: target.id }
     },
     // The dialog portals to <body>; reserve room so the centered modal fits the frame.
     render: () => (
@@ -58,12 +106,29 @@ function dialogFixture(entries: GitStatusEntry[], interact?: (frame: HTMLElement
   })
 }
 
-export const dirty = dialogFixture(dirtyEntries)
+export const dirty = dialogFixture({ target: shortWorktree })
 
-export const clean = dialogFixture([])
+export const clean = dialogFixture({ target: shortWorktree, entries: [] })
 
-export const alwaysDeleteMenu = dialogFixture(dirtyEntries, () => {
-  document
-    .querySelector<HTMLButtonElement>('[aria-label="More delete options"]')
-    ?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+export const dirtyWithUnsavedFiles = dialogFixture({ target: shortWorktree, unsaved: true })
+
+export const showChangesOpen = dialogFixture({ target: shortWorktree, unsaved: true }, () => {
+  ;[...document.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')]
+    .find((button) => button.textContent?.includes('Show changes'))
+    ?.click()
+})
+
+export const longName = dialogFixture()
+
+export const batch = dialogFixture({ target: shortWorktree, batch: true })
+
+export const forceDelete = dialogFixture({
+  target: shortWorktree,
+  deleteState: {
+    isDeleting: false,
+    error:
+      "fatal: '/Users/me/orca/workspaces/orca-plugins/fix-login' contains modified or untracked files, use --force to delete it",
+    canForceDelete: true,
+    forceDeleteReason: 'dirty'
+  }
 })
