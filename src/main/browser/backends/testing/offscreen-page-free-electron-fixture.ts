@@ -60,7 +60,7 @@ async function run(): Promise<void> {
   await savedGuest.loadURL(`${origin}/second`)
   releaseNavigation()
 
-  await waitUntil(() => !backend.ownsTab(saved.browserPageId))
+  await waitUntil(() => !backend.ownsTab(saved.browserPageId) && savedGuest.isDestroyed())
   const unsavedKept = backend.ownsTab(unsaved.browserPageId)
   const savedFreed = savedGuest.isDestroyed()
 
